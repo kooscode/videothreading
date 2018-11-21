@@ -17,21 +17,31 @@ namespace tc = terraclear;
 #include <thread>
 #include <mutex>
 
+tc::stopwatch _frame_sw;
 std::mutex _mutex;
-cv::Mat _cam_raw;
 cv::Mat _frame;
-cv::VideoCapture _videocapture;
+uint32_t _frame_ms = 0;
+tc::camera_base* _vidstream = nullptr;
+
 bool _running = true;
 
 void reader_thread()
 {
+    if (_vidstream == nullptr)
+    {
+        std::cout << "ERROR - CAMERA IS NULL" << std::endl;
+        _running = false;
+    }
+    
     while (_running)
     {
         //read frame...
-        _videocapture.read(_cam_raw); 
+       _vidstream->update_frames(); 
 
         _mutex.lock();
-            _cam_raw.copyTo(_frame);     
+            _vidstream->getRGBFrame().copyTo(_frame);
+            _frame_ms = _frame_sw.get_elapsed_ms();
+            _frame_sw.reset();
         _mutex.unlock();
     }
 }
@@ -47,16 +57,14 @@ int main(int argc, char** argv)
     //Open CV Window stuff
     std::string window_name = "rgb";
     cv::namedWindow(window_name, cv::WINDOW_NORMAL | cv::WINDOW_FREERATIO);// | WINDOW_AUTOSIZE);
-    
 
+    _vidstream = new tc::camera_usb(0, 1280, 720);
+   
     //timing..
-    tc::stopwatch sw;
-    sw.start();
+    _frame_sw.start();
     
-    _videocapture.open(0);
-    
-    _videocapture.set(CV_CAP_PROP_FRAME_WIDTH,1920); // resolution X
-    _videocapture.set(CV_CAP_PROP_FRAME_HEIGHT,1080); //resolution Y
+//    _videocapture.set(CV_CAP_PROP_FRAME_WIDTH,1920); // resolution X
+//    _videocapture.set(CV_CAP_PROP_FRAME_HEIGHT,1080); //resolution Y
 
 //    _videocapture.set(CV_CAP_PROP_FRAME_WIDTH,1280); // resolution X
 //    _videocapture.set(CV_CAP_PROP_FRAME_HEIGHT,720); //resolution Y
@@ -64,36 +72,33 @@ int main(int argc, char** argv)
 //    _videocapture.set(CV_CAP_PROP_FRAME_WIDTH,1280); // resolution X
 //    _videocapture.set(CV_CAP_PROP_FRAME_HEIGHT,960); //resolution Y
 
-
-    //make sure video stream is open/active
-    if (!_videocapture.isOpened())
-    { //check if video device has been initialised
-        std::cout << "Error loading video" << std::endl;
-        return -1;
-    }  
-
     //read first frame..
-    _videocapture.read(_cam_raw); 
+    _vidstream->update_frames(); 
     
     //copy it..
-    _cam_raw.copyTo(_frame);     
+    _vidstream->getRGBFrame().copyTo(_frame);     
 
     //start capture thread..
     std::thread cvthread(&reader_thread);
     
+    tc::stopwatch sw;
+    sw.start();
+    
     do
     {
          //adjust framerate
-        if (sw.get_elapsed_ms() > 30)
+        if ((sw.get_elapsed_ms() > 30) && (_frame_ms > 0))
         {
             _mutex.lock();
                 std::stringstream fpsstr;
-                double fps = 1000 /  sw.get_elapsed_ms();
-                fpsstr << std::fixed << std::setprecision(0) << fps << "fps";
+                double cam_fps = 1000 /  _frame_ms;
+                double refresh_fps = 1000 /  sw.get_elapsed_ms();
+                fpsstr << "C:" << std::fixed << std::setprecision(0) << cam_fps << "";
+                fpsstr << "R:" << std::fixed << std::setprecision(0) << refresh_fps;
                 cv::putText(_frame, fpsstr.str(), cv::Point(10,50), cv::FONT_HERSHEY_PLAIN, 4,  cv::Scalar(0x00, 0x00, 0xff), 4);   
-                sw.reset();
                 //show window
                 cv::imshow(window_name, _frame);
+                sw.reset();
             _mutex.unlock();
         }
         
@@ -101,7 +106,7 @@ int main(int argc, char** argv)
         int x = cv::waitKey(1);
         if(x == 27) // ESC Key = exit
         {
-            break;       
+            _running = false; 
         }
         else if (x == 115)
         {
@@ -119,10 +124,9 @@ int main(int argc, char** argv)
         //update image frame
        // cam->update_frames();
         
-   } while (true);    
+   } while (_running);    
     
    //stop thread..
-   _running = false; 
    cvthread.join();
 
     return 0;
