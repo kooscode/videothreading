@@ -9,7 +9,13 @@
 
 //Requires libterraclear
 //add "../" to include path or wherever libterraclear was cloned to..
+#ifndef TC_USE_REALSENSE
+    #define TC_USE_REALSENSE
+#endif
+
 #include "libterraclear/src/camera_usb.hpp"
+#include "libterraclear/src/camera_file.hpp"
+#include "libterraclear/src/camera_depth_realsense.hpp"
 #include "libterraclear/src/stopwatch.hpp"
 
 namespace tc = terraclear;
@@ -48,6 +54,9 @@ void reader_thread()
 
 int main(int argc, char** argv) 
 {
+    
+    //std::cout << cv::getBuildInformation() << std::endl;
+    
     //testing regular usb cam implementation..
 //    tc::camera_usb usbcam(0, 1280, 720);
 //    tc::camera_base* cam = &usbcam;
@@ -58,8 +67,15 @@ int main(int argc, char** argv)
     std::string window_name = "rgb";
     cv::namedWindow(window_name, cv::WINDOW_NORMAL | cv::WINDOW_FREERATIO);// | WINDOW_AUTOSIZE);
 
-    _vidstream = new tc::camera_usb(0, 1280, 720);
-   
+   // _vidstream = new tc::camera_usb(0, 1920, 1080);
+    if (argc > 1)
+        _vidstream = new tc::camera_depth_realsense(argv[1]);
+    else
+        _vidstream = new tc::camera_depth_realsense();
+        
+  
+//    _vidstream = new tc::camera_file("v4l2src device=/dev/video0 ! nvvidconv ! video/x-raw, width=1920, height=1080, format=BGR ! appsink");
+
     //timing..
     _frame_sw.start();
     
@@ -96,6 +112,9 @@ int main(int argc, char** argv)
                 fpsstr << "C:" << std::fixed << std::setprecision(0) << cam_fps << "";
                 fpsstr << "R:" << std::fixed << std::setprecision(0) << refresh_fps;
                 cv::putText(_frame, fpsstr.str(), cv::Point(10,50), cv::FONT_HERSHEY_PLAIN, 4,  cv::Scalar(0x00, 0x00, 0xff), 4);   
+                
+                std::cout << fpsstr.str() << std::endl;
+                
                 //show window
                 cv::imshow(window_name, _frame);
                 sw.reset();
